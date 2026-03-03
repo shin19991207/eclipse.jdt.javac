@@ -19,7 +19,6 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Map.Entry;
 import java.util.Optional;
 import java.util.Set;
 
@@ -88,8 +87,8 @@ public class UnusedTreeScanner<R, P> extends TreeScanner<R, P> {
 	private boolean methodSuppressUnused = false;
 	private boolean lhsInAssignment = false;
 
-	record CloseableState(int declBranchDepth, int declCallableDepth, boolean potential) {}
-	final Map<VarSymbol, CloseableState> unclosedCloseables = new LinkedHashMap<>();
+	public record CloseableState(int declBranchDepth, int declCallableDepth, boolean potential, JCTree location) {}
+	final Map<Symbol, CloseableState> unclosedCloseables = new LinkedHashMap<>();
 	private int branchDepth = 0;
 	private int callableDepth = 0;
 
@@ -185,17 +184,18 @@ public class UnusedTreeScanner<R, P> extends TreeScanner<R, P> {
 	@Override
 	public R visitAssignment(AssignmentTree node, P p) {
 		if (node instanceof JCAssign assign) {
-			if (assign.lhs instanceof JCIdent ident
-				&& ident.sym instanceof VarSymbol varSym
-				&& assign.rhs instanceof JCNewClass newClass
-				&& (implementsInterface(newClass.type, "java.lang.AutoCloseable")
-					|| implementsInterface(newClass.type, "java.io.Closeable"))) {
-				this.unclosedCloseables.put(varSym, new CloseableState(this.branchDepth, this.callableDepth, false));
-			}
 			scan(assign.rhs, p);
 			this.lhsInAssignment = true;
 			scan(assign.lhs, p);
 			this.lhsInAssignment = false;
+
+			if (assign.lhs instanceof JCIdent ident
+				&& assign.rhs instanceof JCNewClass newClass
+				&& (implementsInterface(newClass.type, "java.lang.AutoCloseable")
+					|| implementsInterface(newClass.type, "java.io.Closeable"))) {
+				this.unclosedCloseables.put(ident.sym,
+					new CloseableState(this.branchDepth, this.callableDepth, false, assign));
+			}
 
 			if (isNoEffectAssignment(assign)) {
 				this.noEffectAssignments.add(assign);
@@ -236,19 +236,24 @@ public class UnusedTreeScanner<R, P> extends TreeScanner<R, P> {
 		if (node instanceof JCMethodInvocation invocation
 			&& invocation.meth instanceof JCFieldAccess method
 			&& method.name.contentEquals("close")
-			&& method.selected instanceof JCIdent ident
-			&& ident.sym instanceof VarSymbol varSym) {
-				CloseableState closeableState = this.unclosedCloseables.get(varSym);
+			&& method.selected instanceof JCIdent ident) {
+				CloseableState closeableState = this.unclosedCloseables.get(ident.sym);
 				if (closeableState != null) {
 					if (this.callableDepth > closeableState.declCallableDepth()
 							|| this.branchDepth > closeableState.declBranchDepth()) {
 						if (!closeableState.potential()) {
-							this.unclosedCloseables.put(varSym, new CloseableState(
-									closeableState.declBranchDepth(), closeableState.declCallableDepth(), true));
+							this.unclosedCloseables.put(
+								ident.sym,
+								new CloseableState(
+									closeableState.declBranchDepth(),
+									closeableState.declCallableDepth(),
+									true,
+									closeableState.location())
+								);
 						}
 					} else {
 						// close() is at the same or outer scope as the declaration
-						this.unclosedCloseables.remove(varSym);
+						this.unclosedCloseables.remove(ident.sym);
 					}
 				}
 			}
@@ -306,11 +311,11 @@ public class UnusedTreeScanner<R, P> extends TreeScanner<R, P> {
 			this.privateDecls.add(node);
 		}
 		if (node instanceof JCVariableDecl varDecl
-			&& varDecl.sym instanceof VarSymbol varSym
 			&& varDecl.init instanceof JCNewClass newClass
 			&& (implementsInterface(newClass.type, "java.lang.AutoCloseable")
 				|| implementsInterface(newClass.type, "java.io.Closeable"))) {
-			this.unclosedCloseables.put(varSym, new CloseableState(this.branchDepth, this.callableDepth, false));
+			this.unclosedCloseables.put(varDecl.sym,
+				new CloseableState(this.branchDepth, this.callableDepth, false, varDecl));
 		}
 		return super.visitVariable(node, p);
 	}
@@ -526,11 +531,7 @@ public class UnusedTreeScanner<R, P> extends TreeScanner<R, P> {
 	}
 
 	public List<CategorizedProblem> getUnclosedCloseables(UnusedProblemFactory problemFactory) {
-		Map<VarSymbol, Boolean> unclosedCloseables = new LinkedHashMap<>();
-		for (Entry<VarSymbol, CloseableState> e : this.unclosedCloseables.entrySet()) {
-			unclosedCloseables.put(e.getKey(), e.getValue().potential());
-		}
-		return problemFactory.addUnclosedCloseables(unit, unclosedCloseables);
+		return problemFactory.addUnclosedCloseables(unit, this.unclosedCloseables);
 	}
 
 	public List<CategorizedProblem> getUnusedPrivateMembers(UnusedProblemFactory problemFactory) {
