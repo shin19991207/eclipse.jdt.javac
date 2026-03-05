@@ -107,6 +107,7 @@ import org.eclipse.jdt.internal.javac.CachingJarsJavaFileManager;
 import org.eclipse.jdt.internal.javac.JavacResolverTaskListener;
 import org.eclipse.jdt.internal.javac.JavacUtils;
 import org.eclipse.jdt.internal.javac.ProcessorConfig;
+import org.eclipse.jdt.internal.javac.problem.JavacDiagnosticProblemFactory;
 import org.eclipse.jdt.internal.javac.dom.JavacTypeBinding;
 import org.eclipse.jdt.internal.javac.problem.JavacDiagnosticProblemConverter;
 import org.eclipse.jdt.internal.javac.problem.JavacProblemDiscovery;
@@ -143,23 +144,25 @@ public class JavacCompilationUnitResolver implements ICompilationUnitResolver {
 
 	private final class ForwardDiagnosticsAsDOMProblems implements DiagnosticListener<JavaFileObject> {
 		public final Map<JavaFileObject, CompilationUnit> filesToUnits;
-		private final JavacDiagnosticProblemConverter problemConverter;
+		private final JavacDiagnosticProblemFactory problemFactory;
 
 		private ForwardDiagnosticsAsDOMProblems(Map<JavaFileObject, CompilationUnit> filesToUnits,
-				JavacDiagnosticProblemConverter problemConverter) {
+				JavacDiagnosticProblemFactory problemFactory) {
 			this.filesToUnits = filesToUnits;
-			this.problemConverter = problemConverter;
+			this.problemFactory = problemFactory;
 		}
 
 		@Override
 		public void report(Diagnostic<? extends JavaFileObject> diagnostic) {
 			findTargetDOM(filesToUnits, diagnostic).ifPresent(dom -> {
-				var newProblem = problemConverter.createJavacProblem(diagnostic);
-				if (newProblem != null) {
+				var newProblems = problemFactory.createJavacProblems(diagnostic);
+				if (!newProblems.isEmpty()) {
 					IProblem[] previous = dom.getProblems();
-					IProblem[] newProblems = Arrays.copyOf(previous, previous.length + 1);
-					newProblems[newProblems.length - 1] = newProblem;
-					dom.setProblems(newProblems);
+					IProblem[] allProblems = Arrays.copyOf(previous, previous.length + newProblems.size());
+					for (int i = 0; i < newProblems.size(); i++) {
+						allProblems[previous.length + i] = newProblems.get(i);
+					}
+					dom.setProblems(allProblems);
 				}
 			});
 		}
@@ -625,7 +628,8 @@ public class JavacCompilationUnitResolver implements ICompilationUnitResolver {
 		Map<CompilationUnit, ReferenceContext> domToReferenceContext = new HashMap<>();
 		final UnusedProblemFactory unusedProblemFactory = new UnusedProblemFactory(new DefaultProblemFactory(), compilerOptions);
 		JavacDiagnosticProblemConverter problemConverter = new JavacDiagnosticProblemConverter(compilerOptions, context);
-		DiagnosticListener<JavaFileObject> diagnosticListener = new ForwardDiagnosticsAsDOMProblems(filesToUnits, problemConverter);
+		JavacDiagnosticProblemFactory problemFactory = new JavacDiagnosticProblemFactory(problemConverter, context);
+		DiagnosticListener<JavaFileObject> diagnosticListener = new ForwardDiagnosticsAsDOMProblems(filesToUnits, problemFactory);
 		// must be 1st thing added to context
 		context.put(DiagnosticListener.class, diagnosticListener);
 		Map<JavaFileObject, File> fileObjectsToJars = new HashMap<>();
@@ -738,8 +742,8 @@ public class JavacCompilationUnitResolver implements ICompilationUnitResolver {
 					// Let's handle problems from the diagnostics first
 					// javadoc problems explicitly set as they're not sent to DiagnosticListener (maybe find a flag to do it?)
 					List<IProblem> javadocProblems = converter.javadocDiagnostics.stream()
-							.map(x -> (IProblem)problemConverter.createJavacProblem(x))
-							.filter(Objects::nonNull)
+							.flatMap(x -> problemFactory.createJavacProblems(x).stream())
+							.map(x -> (IProblem)x)
 							.toList();
 					if (javadocProblems.size() > 0) {
 						JdtCoreDomPackagePrivateUtility.addProblemsToDOM(res, javadocProblems);
