@@ -15,12 +15,15 @@ package org.eclipse.jdt.internal.javac.problem;
 
 import java.io.IOException;
 import java.lang.annotation.Annotation;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Predicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -38,6 +41,7 @@ import org.eclipse.jdt.core.compiler.IProblem;
 import org.eclipse.jdt.core.dom.Modifier.ModifierKeyword;
 import org.eclipse.jdt.internal.compiler.classfmt.ClassFileConstants;
 import org.eclipse.jdt.internal.compiler.impl.CompilerOptions;
+import org.eclipse.jdt.internal.compiler.problem.DefaultProblemFactory;
 import org.eclipse.jdt.internal.compiler.problem.ProblemReporter;
 import org.eclipse.jdt.internal.compiler.problem.ProblemSeverities;
 
@@ -56,6 +60,7 @@ import com.sun.tools.javac.code.Symbol.VarSymbol;
 import com.sun.tools.javac.code.Type;
 import com.sun.tools.javac.code.Type.ClassType;
 import com.sun.tools.javac.code.TypeTag;
+import com.sun.tools.javac.code.Types;
 import com.sun.tools.javac.parser.Scanner;
 import com.sun.tools.javac.parser.ScannerFactory;
 import com.sun.tools.javac.parser.Tokens.Token;
@@ -87,13 +92,15 @@ import com.sun.tools.javac.util.Name;
 import com.sun.tools.javac.util.Position;
 
 public class JavacDiagnosticProblemConverter {
+	private static final String COMPILER_ERR_DOES_NOT_OVERRIDE_ABSTRACT = "compiler.err.does.not.override.abstract";
 	private static final String COMPILER_ERR_MISSING_RET_STMT = "compiler.err.missing.ret.stmt";
 	private static final String COMPILER_WARN_NON_SERIALIZABLE_INSTANCE_FIELD = "compiler.warn.non.serializable.instance.field";
 	private static final String COMPILER_WARN_MISSING_SVUID = "compiler.warn.missing.SVUID";
+	private static final Pattern SOURCE_VERSION_EXTRACTOR = Pattern.compile("--?source ([-0-9]+)");
 	private final CompilerOptions compilerOptions;
 	private final Context context;
 	private final Map<JavaFileObject, JCCompilationUnit> units = new HashMap<>();
-	private static final Pattern SOURCE_VERSION_EXTRACTOR = Pattern.compile("--?source ([-0-9]+)");;
+	private final DefaultProblemFactory problemFactory = new DefaultProblemFactory(Locale.getDefault());
 
 	public JavacDiagnosticProblemConverter(Map<String, String> options, Context context) {
 		this(new CompilerOptions(options), context);
@@ -117,6 +124,10 @@ public class JavacDiagnosticProblemConverter {
 				|| (nestedDiagnostic.getSource() == null && findSymbol(nestedDiagnostic) instanceof ClassSymbol classSymbol
 					&& classSymbol.sourcefile == diagnostic.getSource()));
 		int problemId = toProblemId(useNestedDiagnostic ? nestedDiagnostic : diagnostic);
+		return createProblem(diagnostic, problemId, null, null);
+	}
+
+	private JavacProblem createProblem(Diagnostic<? extends JavaFileObject> diagnostic, int problemId, String messageOverride, String[] argumentsOverride) {
 		if (problemId == -1) { // cannot use < 0 as IProblem.Javadoc < 0
 			return null;
 		}
@@ -146,10 +157,10 @@ public class JavacDiagnosticProblemConverter {
 				ILog.get().error(ex.getMessage(), ex);
 			}
 		}
-		String[] arguments = getDiagnosticStringArguments(diagnostic);
+		String[] arguments = argumentsOverride != null ? argumentsOverride : getDiagnosticStringArguments(diagnostic);
 		return new JavacProblem(
 				diagnostic.getSource().getName().toCharArray(),
-				diagnostic.getMessage(Locale.getDefault()),
+ 				messageOverride != null ? messageOverride : diagnostic.getMessage(Locale.getDefault()),
 				diagnostic.getCode(),
 				problemId,
 				arguments,
@@ -158,6 +169,89 @@ public class JavacDiagnosticProblemConverter {
 				diagnosticPosition.getOffset() + Math.max(diagnosticPosition.getLength() - 1, 0),
 				(int) diagnostic.getLineNumber(),
 				(int) diagnostic.getColumnNumber());
+	}
+
+	public List<JavacProblem> createJavacProblems(Diagnostic<? extends JavaFileObject> diagnostic) {
+		if (diagnostic instanceof JCDiagnostic jcDiagnostic && COMPILER_ERR_DOES_NOT_OVERRIDE_ABSTRACT.equals(jcDiagnostic.getCode())) {
+			return createDoesNotOverrideAbstractProblems(jcDiagnostic);
+		}
+		JavacProblem problem = createJavacProblem(diagnostic);
+		return problem == null ? List.of() : List.of(problem);
+	}
+
+	private List<JavacProblem> createDoesNotOverrideAbstractProblems(JCDiagnostic diagnostic) {
+		Object[] args = diagnostic.getArgs();
+		if (args.length >= 2 && args[0] instanceof ClassSymbol classSymbol && args[1] instanceof MethodSymbol methodSymbol) {
+			Types types = Types.instance(this.context);
+			List<MethodSymbol> missingMethods = new ArrayList<>();
+			Set<String> visitedMethodSignatures = new HashSet<>();
+			List<ClassSymbol> toVisit = new ArrayList<>();
+			Set<ClassSymbol> queued = new HashSet<>();
+			toVisit.add(classSymbol);
+			queued.add(classSymbol);
+			for (int visitIndex = 0; visitIndex < toVisit.size(); visitIndex++) {
+				ClassSymbol current = toVisit.get(visitIndex);
+				for (Symbol symbol : current.getEnclosedElements()) {
+					if (!(symbol instanceof MethodSymbol abstractMethod)) continue;
+					if ((abstractMethod.flags() & (Flags.ABSTRACT | Flags.DEFAULT | Flags.PRIVATE)) != Flags.ABSTRACT) continue;
+
+					MethodSymbol implementation = abstractMethod.implementation(classSymbol, types, true);
+					if (implementation == null || implementation == abstractMethod) {
+						MethodSymbol defaultProvider = types.interfaceCandidates(classSymbol.type, abstractMethod).head;
+						if (defaultProvider != null && defaultProvider.overrides(abstractMethod, classSymbol, types, true)) {
+							implementation = defaultProvider;
+						}
+					}
+					if (implementation == null || implementation == abstractMethod) {
+						String signature = abstractMethod.name + abstractMethod.type.toString();
+						if (visitedMethodSignatures.add(signature)) {
+							missingMethods.add(abstractMethod);
+						}
+					}
+				}
+
+				Type superType = types.supertype(current.type);
+				if (superType.tsym instanceof ClassSymbol superClass && queued.add(superClass)) {
+					toVisit.add(superClass);
+				}
+				for (com.sun.tools.javac.util.List<Type> interfaces = types.interfaces(current.type);
+						interfaces.nonEmpty();
+						interfaces = interfaces.tail) {
+					if (interfaces.head.tsym instanceof ClassSymbol interfaceSymbol && queued.add(interfaceSymbol)) {
+						toVisit.add(interfaceSymbol);
+					}
+				}
+			}
+
+			if (missingMethods.isEmpty()) {
+				missingMethods.add(methodSymbol);
+			}
+
+			List<JavacProblem> allProblems = new ArrayList<>(missingMethods.size());
+			for (MethodSymbol missingMethod : missingMethods) {
+				String ownerType = missingMethod.owner instanceof ClassSymbol ownerClass ? ownerClass.toString() : classSymbol.toString();
+				String methodParams = missingMethod.getParameters().stream()
+						.map(parameter -> parameter.type.toString())
+						.collect(Collectors.joining(", "));
+				String[] arguments = new String[] {
+						missingMethod.name.toString(),
+						methodParams,
+						ownerType,
+						classSymbol.toString()
+				};
+
+				JavacProblem convertedProblem = createProblem(
+						diagnostic,
+						IProblem.AbstractMethodMustBeImplemented,
+						this.problemFactory.getLocalizedMessage(IProblem.AbstractMethodMustBeImplemented, arguments),
+						arguments);
+				if (convertedProblem != null) {
+					allProblems.add(convertedProblem);
+				}
+			}
+			return allProblems;
+		}
+		return List.of();
 	}
 
 	private boolean filterProblem(Diagnostic<? extends JavaFileObject> diagnostic, int problemId, int severity, JCTree tree) {
@@ -776,7 +870,7 @@ public class JavacDiagnosticProblemConverter {
 						yield IProblem.AbstractMethodsInConcreteClass;
 					}
 				}
-				yield IProblem.AbstractMethodMustBeImplemented;
+				yield -1;
 			}
 			case COMPILER_WARN_MISSING_SVUID -> IProblem.MissingSerialVersion;
 			case COMPILER_WARN_NON_SERIALIZABLE_INSTANCE_FIELD -> 99999999; // JDT doesn't have this diagnostic

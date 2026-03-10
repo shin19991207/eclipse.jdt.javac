@@ -154,12 +154,14 @@ public class JavacCompilationUnitResolver implements ICompilationUnitResolver {
 		@Override
 		public void report(Diagnostic<? extends JavaFileObject> diagnostic) {
 			findTargetDOM(filesToUnits, diagnostic).ifPresent(dom -> {
-				var newProblem = problemConverter.createJavacProblem(diagnostic);
-				if (newProblem != null) {
+				var newProblems = problemConverter.createJavacProblems(diagnostic);
+				if (!newProblems.isEmpty()) {
 					IProblem[] previous = dom.getProblems();
-					IProblem[] newProblems = Arrays.copyOf(previous, previous.length + 1);
-					newProblems[newProblems.length - 1] = newProblem;
-					dom.setProblems(newProblems);
+					IProblem[] allProblems = Arrays.copyOf(previous, previous.length + newProblems.size());
+					for (int i = 0; i < newProblems.size(); i++) {
+						allProblems[previous.length + i] = newProblems.get(i);
+					}
+					dom.setProblems(allProblems);
 				}
 			});
 		}
@@ -738,8 +740,8 @@ public class JavacCompilationUnitResolver implements ICompilationUnitResolver {
 					// Let's handle problems from the diagnostics first
 					// javadoc problems explicitly set as they're not sent to DiagnosticListener (maybe find a flag to do it?)
 					List<IProblem> javadocProblems = converter.javadocDiagnostics.stream()
-							.map(x -> (IProblem)problemConverter.createJavacProblem(x))
-							.filter(Objects::nonNull)
+							.flatMap(x -> problemConverter.createJavacProblems(x).stream())
+							.map(x -> (IProblem)x)
 							.toList();
 					if (javadocProblems.size() > 0) {
 						JdtCoreDomPackagePrivateUtility.addProblemsToDOM(res, javadocProblems);
