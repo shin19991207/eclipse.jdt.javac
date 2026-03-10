@@ -46,6 +46,7 @@ import org.eclipse.jdt.internal.compiler.env.INameEnvironment;
 import org.eclipse.jdt.internal.compiler.problem.AbortCompilation;
 import org.eclipse.jdt.internal.core.JavaProject;
 import org.eclipse.jdt.internal.core.builder.SourceFile;
+import org.eclipse.jdt.internal.javac.problem.JavacDiagnosticProblemFactory;
 import org.eclipse.jdt.internal.javac.problem.JavacProblem;
 import org.eclipse.jdt.internal.javac.problem.JavacDiagnosticProblemConverter;
 
@@ -119,6 +120,7 @@ public class JavacCompiler extends Compiler {
 		ProceedOnErrorTransTypes.preRegister(javacContext);
 		ProceedOnErrorGen.preRegister(javacContext);
 		JavacDiagnosticProblemConverter problemConverter = new JavacDiagnosticProblemConverter(this.compilerConfig.compilerOptions(), javacContext);
+		JavacDiagnosticProblemFactory problemFactory = new JavacDiagnosticProblemFactory(problemConverter, javacContext);
 		Set<JavaFileObject> sourceWithErrors = new HashSet<>();
 		javacContext.put(FILES_WITH_ERRORS_KEY, sourceWithErrors);
 		javacContext.put(DiagnosticListener.class, diagnostic -> {
@@ -137,6 +139,7 @@ public class JavacCompiler extends Compiler {
 						previous = new ArrayList<>();
 						javacProblems.put(originalUnit, previous);
 					}
+					previous.addAll(convertedProblems);
 					previous.addAll(convertedProblems);
 				}
 			}

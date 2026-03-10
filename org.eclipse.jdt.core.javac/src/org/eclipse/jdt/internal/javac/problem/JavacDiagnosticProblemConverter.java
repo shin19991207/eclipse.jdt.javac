@@ -857,7 +857,13 @@ public class JavacDiagnosticProblemConverter {
 					default -> IProblem.ParameterMismatch;
 				};
 			case "compiler.err.premature.eof" -> IProblem.ParsingErrorUnexpectedEOF; // syntax error
-			case "compiler.err.report.access", "compiler.err.not.def.access.class.intf.cant.access" -> convertNotVisibleAccess(diagnostic);
+			case "compiler.err.report.access", "compiler.err.not.def.access.class.intf.cant.access" -> {
+				String englishMessage = diagnostic.getMessage(Locale.ENGLISH);
+				if (englishMessage != null && englishMessage.contains("does not override abstract method")) {
+					yield -1;
+				}
+				yield convertNotVisibleAccess(diagnostic);
+			}
 			case "compiler.err.does.not.override.abstract" -> {
 				Object[] args = getDiagnosticArguments(diagnostic);
 				if (args.length > 2
