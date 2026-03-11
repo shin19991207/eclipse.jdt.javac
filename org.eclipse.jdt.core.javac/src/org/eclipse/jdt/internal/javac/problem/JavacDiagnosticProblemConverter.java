@@ -101,6 +101,7 @@ public class JavacDiagnosticProblemConverter {
 	private final Context context;
 	private final Map<JavaFileObject, JCCompilationUnit> units = new HashMap<>();
 	private final DefaultProblemFactory problemFactory = new DefaultProblemFactory(Locale.getDefault());
+	private static record Range(int start, int length) {}
 
 	public JavacDiagnosticProblemConverter(Map<String, String> options, Context context) {
 		this(new CompilerOptions(options), context);
@@ -111,6 +112,9 @@ public class JavacDiagnosticProblemConverter {
 	}
 
 	public JavacProblem[] createJavacProblems(Diagnostic<? extends JavaFileObject> diagnostic) {
+		if (diagnostic instanceof JCDiagnostic jcDiagnostic && COMPILER_ERR_DOES_NOT_OVERRIDE_ABSTRACT.equals(jcDiagnostic.getCode())) {
+			return createDoesNotOverrideAbstractProblems(jcDiagnostic);
+		}
 		if (diagnostic instanceof JCDiagnostic jcDiagnostic && COMPILER_ERR_DOES_NOT_OVERRIDE_ABSTRACT.equals(jcDiagnostic.getCode())) {
 			return createDoesNotOverrideAbstractProblems(jcDiagnostic);
 		}
