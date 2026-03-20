@@ -552,6 +552,9 @@ public class JavacDiagnosticProblemConverter {
 				} else if (problemId == IProblem.SwitchExpressionsYieldMissingDefaultCase
 						&& diagnosticPath.getLeaf() instanceof JCTree.JCSwitchExpression switchExpr) {
 					return getPositionByNodeRangeOnly(jcDiagnostic, switchExpr.selector instanceof JCTree.JCParens parens? parens.expr : switchExpr.selector);
+				} else if (problemId == IProblem.UninitializedBlankFinalField) {
+					org.eclipse.jface.text.Position constructorPosition = getConstructorDiagnosticPosition(diagnosticPath);
+					if (constructorPosition != null) return constructorPosition;
 				} else if (problemId == IProblem.UndefinedConstructor) {
 					if (diagnosticPath.getParentPath() != null && diagnosticPath.getParentPath().getLeaf() instanceof JCNewClass newClass) {
 						return getPositionByNodeRangeOnly(jcDiagnostic, newClass);
