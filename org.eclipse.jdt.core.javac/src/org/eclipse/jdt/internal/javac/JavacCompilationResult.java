@@ -30,6 +30,7 @@ public class JavacCompilationResult extends CompilationResult {
 	private Set<String> javacRootReferences = new TreeSet<>();
 	private boolean isMigrated = false;
 	private List<CategorizedProblem> unusedMembers = null;
+	private List<CategorizedProblem> unusedLocalVariables = null;
 	private List<CategorizedProblem> unusedImports = null;
 	private List<CategorizedProblem> unnecessaryCasts = null;
 	private List<CategorizedProblem> noEffectAssignments = null;
@@ -92,6 +93,13 @@ public class JavacCompilationResult extends CompilationResult {
 		this.unusedMembers.addAll(problems);
 	}
 
+	public void addUnusedLocalVariables(List<CategorizedProblem> problems) {
+		if (this.unusedLocalVariables == null) {
+			this.unusedLocalVariables = new ArrayList<>();
+		}
+		this.unusedLocalVariables.addAll(problems);
+	}
+
 	public void addUnnecessaryCasts(List<CategorizedProblem> problems) {
 		if (this.unnecessaryCasts == null) {
 			this.unnecessaryCasts = new ArrayList<>();
@@ -143,6 +151,7 @@ public class JavacCompilationResult extends CompilationResult {
 
 	public List<CategorizedProblem> getAdditionalProblems() {
 		if (this.unusedMembers == null
+				&& this.unusedLocalVariables == null
 				&& this.unusedImports == null
 				&& this.unnecessaryCasts == null
 				&& this.noEffectAssignments == null
@@ -160,6 +169,9 @@ public class JavacCompilationResult extends CompilationResult {
 		}
 		if (this.unusedMembers != null) {
 			problems.addAll(this.unusedMembers);
+		}
+		if (this.unusedLocalVariables != null) {
+			problems.addAll(this.unusedLocalVariables);
 		}
 		if (this.unnecessaryCasts != null) {
 			problems.addAll(this.unnecessaryCasts);
