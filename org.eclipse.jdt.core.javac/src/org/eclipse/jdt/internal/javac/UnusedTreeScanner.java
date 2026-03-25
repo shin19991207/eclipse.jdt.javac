@@ -576,30 +576,29 @@ public class UnusedTreeScanner<R, P> extends TreeScanner<R, P> {
 				} else if (decl instanceof JCMethodDecl methodDecl && !this.usedElements.contains(methodDecl.sym)) {
 					unusedPrivateMembers.add(decl);
 				} else if (decl instanceof JCVariableDecl variableDecl
-						&& !this.usedElements.contains(variableDecl.sym)) {
-					boolean suppressed = false;
-					for (JCAnnotation annot : variableDecl.mods.annotations) {
-						suppressed = isUnusedSuppressed(annot);
-						break;
-					}
-					VarSymbol varSymbol = variableDecl.sym;
-					ElementKind varKind = varSymbol == null ? null : varSymbol.getKind();
-					if (varKind == ElementKind.FIELD) {
-						if( varSymbol.owner instanceof ClassSymbol css) {
-							String name = variableDecl.name.toString();
-							if( css.getRecordComponents().map(x -> x.toString()).contains(name)) {
-								suppressed = true;
-							}
-						}
-					}
-
-					if (!suppressed) {
-						unusedPrivateMembers.add(decl);
-					}
+						&& !this.usedElements.contains(variableDecl.sym)
+						&& isUnusedPrivateField(variableDecl)
+						&& !isUnusedVariableSuppressed(variableDecl)) {
+					unusedPrivateMembers.add(decl);
 				}
 			}
 		}
 		return problemFactory.addUnusedPrivateMembers(unit, unusedPrivateMembers);
+	}
+
+	public List<CategorizedProblem> getUnusedLocalVariables(UnusedProblemFactory problemFactory) {
+		List<JCVariableDecl> unusedVariables = new ArrayList<>();
+		if (!classSuppressUnused && !methodSuppressUnused) {
+			for (Tree decl : this.privateDecls) {
+				if (decl instanceof JCVariableDecl variableDecl
+						&& !this.usedElements.contains(variableDecl.sym)
+						&& !isUnusedPrivateField(variableDecl)
+						&& !isUnusedVariableSuppressed(variableDecl)) {
+					unusedVariables.add(variableDecl);
+				}
+			}
+		}
+		return problemFactory.addUnusedLocalVariables(unit, unusedVariables);
 	}
 
 	public List<CategorizedProblem> getUnusedTypeParameters(UnusedProblemFactory problemFactory) {
@@ -634,6 +633,27 @@ public class UnusedTreeScanner<R, P> extends TreeScanner<R, P> {
 						}
 					}
 				}
+			}
+		}
+		return suppressed;
+	}
+
+	private boolean isUnusedPrivateField(JCVariableDecl variableDecl) {
+		VarSymbol varSymbol = variableDecl.sym;
+		return varSymbol != null && varSymbol.getKind() == ElementKind.FIELD;
+	}
+
+	private boolean isUnusedVariableSuppressed(JCVariableDecl variableDecl) {
+		boolean suppressed = false;
+		for (JCAnnotation annot : variableDecl.mods.annotations) {
+			suppressed = isUnusedSuppressed(annot);
+			break;
+		}
+		VarSymbol varSymbol = variableDecl.sym;
+		if (!suppressed && isUnusedPrivateField(variableDecl) && varSymbol.owner instanceof ClassSymbol css) {
+			String name = variableDecl.name.toString();
+			if (css.getRecordComponents().map(x -> x.toString()).contains(name)) {
+				suppressed = true;
 			}
 		}
 		return suppressed;

@@ -55,11 +55,13 @@ import com.sun.tools.javac.code.Symbol.VarSymbol;
 import com.sun.tools.javac.code.Type;
 import com.sun.tools.javac.code.Type.ArrayType;
 import com.sun.tools.javac.code.Type.MethodType;
+import com.sun.tools.javac.main.Option;
 import com.sun.tools.javac.tree.JCTree.JCClassDecl;
 import com.sun.tools.javac.tree.JCTree.JCFieldAccess;
 import com.sun.tools.javac.tree.JCTree.JCIdent;
 import com.sun.tools.javac.tree.JCTree.JCModuleDecl;
 import com.sun.tools.javac.util.Context;
+import com.sun.tools.javac.util.Options;
 
 public class JavacCompilerTaskListener implements TaskListener {
 	private Map<ICompilationUnit, JavacCompilationResult> results = new HashMap<>();
@@ -128,165 +130,177 @@ public class JavacCompilerTaskListener implements TaskListener {
 			final Map<Symbol, ClassFile> visitedClasses = new HashMap<Symbol, ClassFile>();
 			final Set<ClassSymbol> hierarchyRecorded = new HashSet<>();
 			final TypeElement currentTopLevelType = e.getTypeElement();
-			UnusedTreeScanner<Void, Void> scanner = new UnusedTreeScanner<>() {
-
-				@Override
-				public Void visitModule(com.sun.source.tree.ModuleTree node, Void p) {
-					if (node instanceof JCModuleDecl moduleDecl) {
-						IContainer expectedOutputDir = computeOutputDirectory(cu);
-						ClassFile currentClass = new JavacClassFile(moduleDecl, expectedOutputDir, tempDir);
-						result.record(MODULE_INFO_NAME, currentClass);
-					}
-					return super.visitModule(node, p);
-				}
-
-				@Override
-				public Void visitClass(ClassTree node, Void p) {
-					if (node instanceof JCClassDecl classDecl) {
-						/**
-						 * If a Java file contains multiple top-level types, it will
-						 * trigger multiple ANALYZE taskEvents for the same compilation
-						 * unit. Each ANALYZE taskEvent corresponds to the completion
-						 * of analysis for a single top-level type. Therefore, in the
-						 * ANALYZE task event listener, we only visit the class and nested
-						 * classes that belong to the currently analyzed top-level type.
-						 */
-						if (Objects.equals(currentTopLevelType, classDecl.sym)
-							|| !(classDecl.sym.owner instanceof PackageSymbol)) {
-							String fullName = classDecl.sym.flatName().toString();
-							String compoundName = fullName.replace('.', '/');
-							Symbol enclosingClassSymbol = this.getEnclosingClass(classDecl.sym);
-							ClassFile enclosingClassFile = enclosingClassSymbol == null ? null : visitedClasses.get(enclosingClassSymbol);
-							IContainer expectedOutputDir = computeOutputDirectory(cu);
-							ClassFile currentClass = new JavacClassFile(fullName, enclosingClassFile, expectedOutputDir, tempDir);
-							visitedClasses.put(classDecl.sym, currentClass);
-							result.record(compoundName.toCharArray(), currentClass);
-							recordTypeHierarchy(classDecl.sym);
-						} else {
-							return null; // Skip if it does not belong to the currently analyzed top-level type.
-						}
-					}
-
-					return super.visitClass(node, p);
-				}
-
-				@Override
-				public Void visitIdentifier(IdentifierTree node, Void p) {
-					if (node instanceof JCIdent id
-							&& id.sym instanceof TypeSymbol typeSymbol) {
-						String qualifiedName = typeSymbol.getQualifiedName().toString();
-						recordQualifiedReference(qualifiedName, false);
-					}
-					return super.visitIdentifier(node, p);
-				}
-
-				@Override
-				public Void visitMemberSelect(MemberSelectTree node, Void p) {
-					if (node instanceof JCFieldAccess field) {
-						if (field.sym != null &&
-							!(field.type instanceof MethodType || "<any?>".equals(field.type.toString()))) {
-							recordQualifiedReference(node.toString(), false);
-							if (field.sym instanceof VarSymbol) {
-								TypeSymbol elementSymbol = field.type.tsym;
-								if (field.type instanceof ArrayType arrayType) {
-									elementSymbol = getElementType(arrayType);
-								}
-								if (elementSymbol instanceof ClassSymbol classSymbol) {
-									recordQualifiedReference(classSymbol.className(), true);
-								}
-							}
-						}
-					}
-					return super.visitMemberSelect(node, p);
-				}
-
-				private Symbol getEnclosingClass(Symbol symbol) {
-					while (symbol != null) {
-						if (symbol.owner instanceof ClassSymbol) {
-							return symbol.owner;
-						} else if (symbol.owner instanceof PackageSymbol) {
-							return null;
-						}
-
-						symbol = symbol.owner;
-					}
-
-					return null;
-				}
-
-				private TypeSymbol getElementType(ArrayType arrayType) {
-					if (arrayType.elemtype instanceof ArrayType subArrayType) {
-						return getElementType(subArrayType);
-					}
-
-					return arrayType.elemtype.tsym;
-				}
-
-				private void recordQualifiedReference(String qualifiedName, boolean recursive) {
-					if (PRIMITIVE_TYPES.contains(qualifiedName)) {
-						return;
-					}
-
-					String[] nameParts = qualifiedName.split("\\.");
-					int length = nameParts.length;
-					if (length == 1) {
-						result.addRootReference(nameParts[0]);
-						result.addSimpleNameReference(nameParts[0]);
-						return;
-					}
-
-					if (!recursive) {
-						result.addRootReference(nameParts[0]);
-						result.addSimpleNameReference(nameParts[length - 1]);
-						result.addQualifiedReference(nameParts);
-					} else {
-						result.addRootReference(nameParts[0]);
-						while (result.addQualifiedReference(Arrays.copyOfRange(nameParts, 0, length))) {
-							if (length == 2) {
-								result.addSimpleNameReference(nameParts[0]);
-								result.addSimpleNameReference(nameParts[1]);
-								return;
-							}
-
-							length--;
-							result.addSimpleNameReference(nameParts[length]);
-						}
-					}
-				}
-
-				private void recordTypeHierarchy(ClassSymbol classSymbol) {
-					if (hierarchyRecorded.contains(classSymbol)) {
-						return;
-					}
-
-					hierarchyRecorded.add(classSymbol);
-					Type superClass = classSymbol.getSuperclass();
-					if (superClass.tsym instanceof ClassSymbol superClassType) {
-						recordQualifiedReference(superClassType.className(), true);
-						recordTypeHierarchy(superClassType);
-					}
-
-					for (Type superInterface : classSymbol.getInterfaces()) {
-						if (superInterface.tsym instanceof ClassSymbol superInterfaceType) {
-							recordQualifiedReference(superInterfaceType.className(), true);
-							recordTypeHierarchy(superInterfaceType);
-						}
-					}
-				}
-			};
-
 			final CompilationUnitTree unit = e.getCompilationUnit();
-			try {
-				scanner.scan(unit, null);
-			} catch (Exception ex) {
-				ILog.get().error("Internal error when visiting the AST Tree. " + ex.getMessage(), ex);
-			}
 
-			final var accessRestrictionScanner = new AccessRestrictionTreeScanner(javacCompiler.lookupEnvironment.nameEnvironment, this.problemFactory, this.javacCompiler.options);
-			accessRestrictionScanner.scan(unit, null);
-
+			boolean getUnusedPrivateMembers = this.javacCompiler.options.getSeverity(CompilerOptions.UnusedPrivateMember) != ProblemSeverities.Ignore;
+			boolean getUnusedLocalVariables = this.javacCompiler.options.getSeverity(CompilerOptions.UnusedLocalVariable) != ProblemSeverities.Ignore;
+			boolean getUnusedImports = this.javacCompiler.options.getSeverity(CompilerOptions.UnusedImport) != ProblemSeverities.Ignore;
+			boolean getUnnecessaryCasts = this.javacCompiler.options.getSeverity(CompilerOptions.UnnecessaryTypeCheck) != ProblemSeverities.Ignore;
+			boolean getNoEffectAssignments = this.javacCompiler.options.getSeverity(CompilerOptions.NoEffectAssignment) != ProblemSeverities.Ignore;
+			boolean getUnclosedCloseables = this.javacCompiler.options.getSeverity(CompilerOptions.UnclosedCloseable) != ProblemSeverities.Ignore;
+			boolean getUnusedTypeParameters = this.javacCompiler.options.getSeverity(CompilerOptions.UnusedTypeParameter) != ProblemSeverities.Ignore;
+			boolean getAccessRestrictions = Options.instance(context).get(Option.XLINT_CUSTOM).contains("all");
 			boolean getIndirectStaticAccessProblems = this.javacCompiler.options.getSeverity(CompilerOptions.IndirectStaticAccess) != ProblemSeverities.Ignore;
 			boolean getUnqualifiedFieldAccessProblems = this.javacCompiler.options.getSeverity(CompilerOptions.UnqualifiedFieldAccess) != ProblemSeverities.Ignore;
+
+			UnusedTreeScanner<Void, Void> unusedTreeScanner = null;
+			if (getUnusedPrivateMembers || getUnusedLocalVariables || getUnusedImports || getUnnecessaryCasts
+					|| getNoEffectAssignments || getUnclosedCloseables || getUnusedTypeParameters) {
+				unusedTreeScanner = new UnusedTreeScanner<>() {
+
+					@Override
+					public Void visitModule(com.sun.source.tree.ModuleTree node, Void p) {
+						if (node instanceof JCModuleDecl moduleDecl) {
+							IContainer expectedOutputDir = computeOutputDirectory(cu);
+							ClassFile currentClass = new JavacClassFile(moduleDecl, expectedOutputDir, tempDir);
+							result.record(MODULE_INFO_NAME, currentClass);
+						}
+						return super.visitModule(node, p);
+					}
+
+					@Override
+					public Void visitClass(ClassTree node, Void p) {
+						if (node instanceof JCClassDecl classDecl) {
+							/**
+							 * If a Java file contains multiple top-level types, it will
+							 * trigger multiple ANALYZE taskEvents for the same compilation
+							 * unit. Each ANALYZE taskEvent corresponds to the completion
+							 * of analysis for a single top-level type. Therefore, in the
+							 * ANALYZE task event listener, we only visit the class and nested
+							 * classes that belong to the currently analyzed top-level type.
+							 */
+							if (Objects.equals(currentTopLevelType, classDecl.sym)
+								|| !(classDecl.sym.owner instanceof PackageSymbol)) {
+								String fullName = classDecl.sym.flatName().toString();
+								String compoundName = fullName.replace('.', '/');
+								Symbol enclosingClassSymbol = this.getEnclosingClass(classDecl.sym);
+								ClassFile enclosingClassFile = enclosingClassSymbol == null ? null : visitedClasses.get(enclosingClassSymbol);
+								IContainer expectedOutputDir = computeOutputDirectory(cu);
+								ClassFile currentClass = new JavacClassFile(fullName, enclosingClassFile, expectedOutputDir, tempDir);
+								visitedClasses.put(classDecl.sym, currentClass);
+								result.record(compoundName.toCharArray(), currentClass);
+								recordTypeHierarchy(classDecl.sym);
+							} else {
+								return null; // Skip if it does not belong to the currently analyzed top-level type.
+							}
+						}
+
+						return super.visitClass(node, p);
+					}
+
+					@Override
+					public Void visitIdentifier(IdentifierTree node, Void p) {
+						if (node instanceof JCIdent id
+								&& id.sym instanceof TypeSymbol typeSymbol) {
+							String qualifiedName = typeSymbol.getQualifiedName().toString();
+							recordQualifiedReference(qualifiedName, false);
+						}
+						return super.visitIdentifier(node, p);
+					}
+
+					@Override
+					public Void visitMemberSelect(MemberSelectTree node, Void p) {
+						if (node instanceof JCFieldAccess field) {
+							if (field.sym != null &&
+								!(field.type instanceof MethodType || "<any?>".equals(field.type.toString()))) {
+								recordQualifiedReference(node.toString(), false);
+								if (field.sym instanceof VarSymbol) {
+									TypeSymbol elementSymbol = field.type.tsym;
+									if (field.type instanceof ArrayType arrayType) {
+										elementSymbol = getElementType(arrayType);
+									}
+									if (elementSymbol instanceof ClassSymbol classSymbol) {
+										recordQualifiedReference(classSymbol.className(), true);
+									}
+								}
+							}
+						}
+						return super.visitMemberSelect(node, p);
+					}
+
+					private Symbol getEnclosingClass(Symbol symbol) {
+						while (symbol != null) {
+							if (symbol.owner instanceof ClassSymbol) {
+								return symbol.owner;
+							} else if (symbol.owner instanceof PackageSymbol) {
+								return null;
+							}
+
+							symbol = symbol.owner;
+						}
+
+						return null;
+					}
+
+					private TypeSymbol getElementType(ArrayType arrayType) {
+						if (arrayType.elemtype instanceof ArrayType subArrayType) {
+							return getElementType(subArrayType);
+						}
+
+						return arrayType.elemtype.tsym;
+					}
+
+					private void recordQualifiedReference(String qualifiedName, boolean recursive) {
+						if (PRIMITIVE_TYPES.contains(qualifiedName)) {
+							return;
+						}
+
+						String[] nameParts = qualifiedName.split("\\.");
+						int length = nameParts.length;
+						if (length == 1) {
+							result.addRootReference(nameParts[0]);
+							result.addSimpleNameReference(nameParts[0]);
+							return;
+						}
+
+						if (!recursive) {
+							result.addRootReference(nameParts[0]);
+							result.addSimpleNameReference(nameParts[length - 1]);
+							result.addQualifiedReference(nameParts);
+						} else {
+							result.addRootReference(nameParts[0]);
+							while (result.addQualifiedReference(Arrays.copyOfRange(nameParts, 0, length))) {
+								if (length == 2) {
+									result.addSimpleNameReference(nameParts[0]);
+									result.addSimpleNameReference(nameParts[1]);
+									return;
+								}
+
+								length--;
+								result.addSimpleNameReference(nameParts[length]);
+							}
+						}
+					}
+
+					private void recordTypeHierarchy(ClassSymbol classSymbol) {
+						if (hierarchyRecorded.contains(classSymbol)) {
+							return;
+						}
+
+						hierarchyRecorded.add(classSymbol);
+						Type superClass = classSymbol.getSuperclass();
+						if (superClass.tsym instanceof ClassSymbol superClassType) {
+							recordQualifiedReference(superClassType.className(), true);
+							recordTypeHierarchy(superClassType);
+						}
+
+						for (Type superInterface : classSymbol.getInterfaces()) {
+							if (superInterface.tsym instanceof ClassSymbol superInterfaceType) {
+								recordQualifiedReference(superInterfaceType.className(), true);
+								recordTypeHierarchy(superInterfaceType);
+							}
+						}
+					}
+				};
+				unusedTreeScanner.scan(unit, null);
+			}
+
+			AccessRestrictionTreeScanner accessRestrictionScanner = null;
+			if (getAccessRestrictions) {
+				accessRestrictionScanner = new AccessRestrictionTreeScanner(javacCompiler.lookupEnvironment.nameEnvironment, this.problemFactory, this.javacCompiler.options);
+				accessRestrictionScanner.scan(unit, null);
+			}
+
 			CodeStyleTreeScanner codeStyleScanner = null;
 			if (getIndirectStaticAccessProblems || getUnqualifiedFieldAccessProblems) {
 				codeStyleScanner = new CodeStyleTreeScanner(this.context, this.problemFactory, this.javacCompiler.options) {
@@ -315,13 +329,32 @@ public class JavacCompilerTaskListener implements TaskListener {
 				codeStyleScanner.scan(unit, null);
 			}
 
-			result.addUnusedMembers(scanner.getUnusedPrivateMembers(this.unusedProblemFactory));
-			result.addUnusedImports(scanner.getUnusedImports(this.unusedProblemFactory));
-			result.addUnnecessaryCasts(scanner.getUnnecessaryCasts(this.unusedProblemFactory));
-			result.addNoEffectAssignments(scanner.getNoEffectAssignments(this.unusedProblemFactory));
-			result.addUnclosedCloseables(scanner.getUnclosedCloseables(this.unusedProblemFactory));
-			result.addUnusedTypeParameters(scanner.getUnusedTypeParameters(this.unusedProblemFactory));
-			result.addAccessRestrictionProblems(accessRestrictionScanner.getAccessRestrictionProblems());
+			if (unusedTreeScanner != null) {
+				if (getUnusedPrivateMembers) {
+					result.addUnusedMembers(unusedTreeScanner.getUnusedPrivateMembers(this.unusedProblemFactory));
+				}
+				if (getUnusedLocalVariables) {
+					result.addUnusedLocalVariables(unusedTreeScanner.getUnusedLocalVariables(this.unusedProblemFactory));
+				}
+				if (getUnusedImports) {
+					result.addUnusedImports(unusedTreeScanner.getUnusedImports(this.unusedProblemFactory));
+				}
+				if (getUnnecessaryCasts) {
+					result.addUnnecessaryCasts(unusedTreeScanner.getUnnecessaryCasts(this.unusedProblemFactory));
+				}
+				if (getNoEffectAssignments) {
+					result.addNoEffectAssignments(unusedTreeScanner.getNoEffectAssignments(this.unusedProblemFactory));
+				}
+				if (getUnclosedCloseables) {
+					result.addUnclosedCloseables(unusedTreeScanner.getUnclosedCloseables(this.unusedProblemFactory));
+				}
+				if (getUnusedTypeParameters) {
+					result.addUnusedTypeParameters(unusedTreeScanner.getUnusedTypeParameters(this.unusedProblemFactory));
+				}
+			}
+			if (accessRestrictionScanner != null) {
+				result.addAccessRestrictionProblems(accessRestrictionScanner.getAccessRestrictionProblems());
+			}
 			if (codeStyleScanner != null) {
 				if (getIndirectStaticAccessProblems) {
 					result.addIndirectStaticAccessProblems(codeStyleScanner.getIndirectStaticAccessProblems());

@@ -66,7 +66,7 @@ public class UnusedProblemFactory {
 	public List<CategorizedProblem> addUnusedImports(CompilationUnitTree unit, Map<String, List<JCImport>> unusedImports) {
 		int severity = this.toSeverity(IProblem.UnusedImport);
 		if (severity == ProblemSeverities.Ignore || severity == ProblemSeverities.Optional) {
-			return null;
+			return Collections.emptyList();
 		}
 
 		Map<String, List<CategorizedProblem>> unusedWarning = new LinkedHashMap<>();
@@ -181,37 +181,67 @@ public class UnusedProblemFactory {
 						problemId, arguments, arguments,
 						severity, pos, endPos, line, column);
 			} else if (decl instanceof JCVariableDecl variableDecl) {
+				VarSymbol varSymbol = variableDecl.sym;
+				if (varSymbol == null || varSymbol.getKind() != ElementKind.FIELD) {
+					continue;
+				}
+
 				int pos = variableDecl.getPreferredPosition();
 				int endPos = pos + variableDecl.name.toString().length() - 1;
 				int line = (int) unit.getLineMap().getLineNumber(pos);
 				int column = (int) unit.getLineMap().getColumnNumber(pos);
-				int problemId = IProblem.LocalVariableIsNeverUsed;
+				String typeName = varSymbol.owner.name.toString();
 				String name = variableDecl.name.toString();
-				String[] arguments = new String[] { name };
-				VarSymbol varSymbol = variableDecl.sym;
-				ElementKind varKind = varSymbol == null ? null : varSymbol.getKind();
-				if (varKind == ElementKind.FIELD) {
-					problemId = IProblem.UnusedPrivateField;
-					String typeName = varSymbol.owner.name.toString();
-					arguments = new String[] {
-						typeName, name
-					};
-				} else if (varKind == ElementKind.PARAMETER) {
-					problemId = IProblem.ArgumentIsNeverUsed;
-				} else if (varKind == ElementKind.EXCEPTION_PARAMETER) {
-					problemId = IProblem.ExceptionParameterIsNeverUsed;
-				}
-
-				int severity = this.toSeverity(problemId);
+				String[] arguments = new String[] {
+					typeName, name
+				};
+				int severity = this.toSeverity(IProblem.UnusedPrivateField);
 				if (severity == ProblemSeverities.Ignore || severity == ProblemSeverities.Optional) {
 					continue;
 				}
 
 				problem = problemFactory.createProblem(fileName,
-						problemId, arguments, arguments,
+						IProblem.UnusedPrivateField, arguments, arguments,
 						severity, pos, endPos, line, column);
 			}
 
+			problems.add(problem);
+		}
+
+		return problems;
+	}
+
+	public List<CategorizedProblem> addUnusedLocalVariables(CompilationUnitTree unit, List<JCVariableDecl> unusedVariables) {
+		if (unit == null) {
+			return Collections.emptyList();
+		}
+
+		final char[] fileName = unit.getSourceFile().getName().toCharArray();
+		List<CategorizedProblem> problems = new ArrayList<>();
+		for (JCVariableDecl variableDecl : unusedVariables) {
+			int pos = variableDecl.getPreferredPosition();
+			int endPos = pos + variableDecl.name.toString().length() - 1;
+			int line = (int) unit.getLineMap().getLineNumber(pos);
+			int column = (int) unit.getLineMap().getColumnNumber(pos);
+			int problemId = IProblem.LocalVariableIsNeverUsed;
+			String name = variableDecl.name.toString();
+			String[] arguments = new String[] { name };
+			VarSymbol varSymbol = variableDecl.sym;
+			ElementKind varKind = varSymbol == null ? null : varSymbol.getKind();
+			if (varKind == ElementKind.PARAMETER) {
+				problemId = IProblem.ArgumentIsNeverUsed;
+			} else if (varKind == ElementKind.EXCEPTION_PARAMETER) {
+				problemId = IProblem.ExceptionParameterIsNeverUsed;
+			}
+
+			int severity = this.toSeverity(problemId);
+			if (severity == ProblemSeverities.Ignore || severity == ProblemSeverities.Optional) {
+				continue;
+			}
+
+			CategorizedProblem problem = problemFactory.createProblem(fileName,
+					problemId, arguments, arguments,
+					severity, pos, endPos, line, column);
 			problems.add(problem);
 		}
 

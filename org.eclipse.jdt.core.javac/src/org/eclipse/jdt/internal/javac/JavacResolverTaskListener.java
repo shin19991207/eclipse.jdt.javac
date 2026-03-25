@@ -152,6 +152,7 @@ public class JavacResolverTaskListener implements TaskListener {
 					.getSeverityString(CompilerOptions.IndirectStaticAccess).equals(CompilerOptions.IGNORE);
 		boolean unqualifiedFieldAccessIgnored = objectCompilerOptions
 					.getSeverityString(CompilerOptions.UnqualifiedFieldAccess).equals(CompilerOptions.IGNORE);
+
 		boolean getAccessRestrictions = Options.instance(context).get(Option.XLINT_CUSTOM).contains("all");
 		boolean getUnusedProblems = !unusedImportIgnored
 				|| !unusedPrivateMemberIgnored
@@ -167,8 +168,14 @@ public class JavacResolverTaskListener implements TaskListener {
 
 		// Add all problems related to unused elements to the dom
 		List<IProblem> accessRestrictions = getAccessRestrictions ? getAccessRestrictionProblems(e, dom) : new ArrayList<>();
-		List<IProblem> allUnused = getUnusedProblems ? getUnusedElementProblems(e, dom) : new ArrayList<>();
-		List<IProblem> codeStyles = getCodeStyleProblems ? getCodeStyleProblems(e, !indirectStaticAccessIgnored, !unqualifiedFieldAccessIgnored) : new ArrayList<>();
+		List<IProblem> allUnused = getUnusedProblems
+				? getUnusedElementProblems(e, dom,
+					!unusedPrivateMemberIgnored, !unusedLocalVariableIgnored, !unusedImportIgnored, !unnecessaryTypeCheckIgnored,
+					!noEffectAssignmentIgnored, !unclosedCloseableIgnored, !unusedTypeParameterIgnored)
+				: new ArrayList<>();
+		List<IProblem> codeStyles = getCodeStyleProblems
+				? getCodeStyleProblems(e, !indirectStaticAccessIgnored, !unqualifiedFieldAccessIgnored)
+				: new ArrayList<>();
 
 		List<IProblem> combined = new ArrayList<IProblem>();
 		combined.addAll(allUnused);
@@ -179,22 +186,22 @@ public class JavacResolverTaskListener implements TaskListener {
 	}
 
 	private List<IProblem> getAccessRestrictionProblems(TaskEvent e, CompilationUnit dom) {
-		if (Options.instance(context).get(Option.XLINT_CUSTOM).contains("all")) {
-			AccessRestrictionTreeScanner accessScanner = null;
-			if (javaProject instanceof JavaProject internalJavaProject) {
-				try {
-					INameEnvironment environment = new SearchableEnvironment(internalJavaProject,
-							(WorkingCopyOwner) null, false, JavaProject.NO_RELEASE);
-					accessScanner = new AccessRestrictionTreeScanner(environment, new DefaultProblemFactory(),
-							new CompilerOptions(compilerOptions));
-					accessScanner.scan(e.getCompilationUnit(), null);
-				} catch (JavaModelException javaModelException) {
-					// do nothing
-				}
+		AccessRestrictionTreeScanner accessScanner = null;
+		if (javaProject instanceof JavaProject internalJavaProject) {
+			try {
+				INameEnvironment environment = new SearchableEnvironment(internalJavaProject,
+						(WorkingCopyOwner) null, false, JavaProject.NO_RELEASE);
+				accessScanner = new AccessRestrictionTreeScanner(environment, new DefaultProblemFactory(),
+						new CompilerOptions(compilerOptions));
+				accessScanner.scan(e.getCompilationUnit(), null);
+			} catch (JavaModelException javaModelException) {
+				// do nothing
 			}
-			return new ArrayList<>(accessScanner.getAccessRestrictionProblems());
 		}
-		return new ArrayList<>();
+		if (accessScanner == null) {
+			return new ArrayList<>();
+		}
+		return new ArrayList<>(accessScanner.getAccessRestrictionProblems());
 	}
 
 	private List<IProblem> getCodeStyleProblems(TaskEvent e, boolean getIndirectStaticAccessProblems, boolean getUnqualifiedFieldAccessProblems) {
@@ -242,7 +249,9 @@ public class JavacResolverTaskListener implements TaskListener {
 		return allCodeStyleProblems;
 	}
 
-	private List<IProblem> getUnusedElementProblems(TaskEvent e, final CompilationUnit dom) {
+	private List<IProblem> getUnusedElementProblems(TaskEvent e, final CompilationUnit dom,
+			boolean getUnusedPrivateMembers, boolean getUnusedLocalVariables, boolean getUnusedImports, boolean getUnnecessaryCasts,
+			boolean getNoEffectAssignments, boolean getUnclosedCloseables, boolean getUnusedTypeParameters) {
 		final TypeElement currentTopLevelType = e.getTypeElement();
 		UnusedTreeScanner<Void, Void> scanner = new UnusedTreeScanner<>() {
 			@Override
@@ -275,42 +284,61 @@ public class JavacResolverTaskListener implements TaskListener {
 
 		List<IProblem> allUnusedProblems = new ArrayList<>();
 
-		List<CategorizedProblem> unusedProblems = scanner.getUnusedPrivateMembers(unusedProblemFactory);
-		if (unusedProblems != null && !unusedProblems.isEmpty()) {
-			allUnusedProblems.addAll(unusedProblems);
-		}
-
-		List<CategorizedProblem> unusedImports = scanner.getUnusedImports(unusedProblemFactory);
-		List<? extends Tree> topTypes = unit.getTypeDecls();
-		int typeCount = topTypes.size();
-		// Once all top level types of this Java file have been resolved,
-		// we can report the unused import to the DOM.
-		if (typeCount <= 1 && unusedImports != null) {
-			allUnusedProblems.addAll(unusedImports);
-		} else if (typeCount > 1 && topTypes.get(typeCount - 1) instanceof JCClassDecl lastType) {
-			if (Objects.equals(currentTopLevelType, lastType.sym)) {
-				allUnusedProblems.addAll(unusedImports);
+		if (getUnusedPrivateMembers) {
+			List<CategorizedProblem> unusedPrivateMembers = scanner.getUnusedPrivateMembers(unusedProblemFactory);
+			if (!unusedPrivateMembers.isEmpty()) {
+				allUnusedProblems.addAll(unusedPrivateMembers);
 			}
 		}
 
-		List<CategorizedProblem> unnecessaryCasts = scanner.getUnnecessaryCasts(unusedProblemFactory);
-		if (!unnecessaryCasts.isEmpty()) {
-			allUnusedProblems.addAll(unnecessaryCasts);
+		if (getUnusedLocalVariables) {
+			List<CategorizedProblem> unusedLocalVariables = scanner.getUnusedLocalVariables(unusedProblemFactory);
+			if (!unusedLocalVariables.isEmpty()) {
+				allUnusedProblems.addAll(unusedLocalVariables);
+			}
 		}
 
-		List<CategorizedProblem> noEffectAssignments = scanner.getNoEffectAssignments(unusedProblemFactory);
-		if (!noEffectAssignments.isEmpty()) {
-			allUnusedProblems.addAll(noEffectAssignments);
+		if (getUnusedImports) {
+			List<CategorizedProblem> unusedImports = scanner.getUnusedImports(unusedProblemFactory);
+			List<? extends Tree> topTypes = unit.getTypeDecls();
+			int typeCount = topTypes.size();
+			// Once all top level types of this Java file have been resolved,
+			// we can report the unused import to the DOM.
+			if (typeCount <= 1 && !unusedImports.isEmpty()) {
+				allUnusedProblems.addAll(unusedImports);
+			} else if (typeCount > 1 && topTypes.get(typeCount - 1) instanceof JCClassDecl lastType) {
+				if (Objects.equals(currentTopLevelType, lastType.sym)) {
+					allUnusedProblems.addAll(unusedImports);
+				}
+			}
 		}
 
-		List<CategorizedProblem> unclosedCloseables = scanner.getUnclosedCloseables(unusedProblemFactory);
-		if (!unclosedCloseables.isEmpty()) {
-			allUnusedProblems.addAll(unclosedCloseables);
+		if (getUnnecessaryCasts) {
+			List<CategorizedProblem> unnecessaryCasts = scanner.getUnnecessaryCasts(unusedProblemFactory);
+			if (!unnecessaryCasts.isEmpty()) {
+				allUnusedProblems.addAll(unnecessaryCasts);
+			}
 		}
 
-		List<CategorizedProblem> unusedTypeParameters = scanner.getUnusedTypeParameters(unusedProblemFactory);
-		if (!unusedTypeParameters.isEmpty()) {
-			allUnusedProblems.addAll(unusedTypeParameters);
+		if (getNoEffectAssignments) {
+			List<CategorizedProblem> noEffectAssignments = scanner.getNoEffectAssignments(unusedProblemFactory);
+			if (!noEffectAssignments.isEmpty()) {
+				allUnusedProblems.addAll(noEffectAssignments);
+			}
+		}
+
+		if (getUnclosedCloseables) {
+			List<CategorizedProblem> unclosedCloseables = scanner.getUnclosedCloseables(unusedProblemFactory);
+			if (!unclosedCloseables.isEmpty()) {
+				allUnusedProblems.addAll(unclosedCloseables);
+			}
+		}
+
+		if (getUnusedTypeParameters) {
+			List<CategorizedProblem> unusedTypeParameters = scanner.getUnusedTypeParameters(unusedProblemFactory);
+			if (!unusedTypeParameters.isEmpty()) {
+				allUnusedProblems.addAll(unusedTypeParameters);
+			}
 		}
 
 		return allUnusedProblems;
