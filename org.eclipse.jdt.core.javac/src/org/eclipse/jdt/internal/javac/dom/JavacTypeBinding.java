@@ -1022,6 +1022,9 @@ public abstract class JavacTypeBinding implements ITypeBinding {
 			}
 		}
 
+		Stream<MethodSymbol> declaredMethods;
+		declaredMethods = StreamSupport.stream(this.typeSymbol.members().getSymbols(MethodSymbol.class::isInstance, LookupKind.NON_RECURSIVE).spliterator(), false)
+					.map(MethodSymbol.class::cast);
 		Stream<JavacMethodBinding> methods = StreamSupport.stream(this.typeSymbol.members().getSymbols(MethodSymbol.class::isInstance, LookupKind.NON_RECURSIVE).spliterator(), false)
 				.map(MethodSymbol.class::cast)
 				.map(sym -> {
