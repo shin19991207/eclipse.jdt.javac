@@ -43,9 +43,59 @@ jobs:
       - name: Trust datho7561's Scripts
         run: jbang trust add https://gist.github.com/datho7561/
       - name: Run diffing script
-        run: xvfb-run jbang https://gist.github.com/datho7561/a6be9caa9dbf2a69f097bd9a82dfa770 > results.txt
-        continue-on-error: true
-      - name: Cat the results
-        run: cat results.txt
+        id: diff
+        shell: bash
+        run: |
+          set +e
+          set -o pipefail
+
+          xvfb-run -a jbang https://gist.github.com/datho7561/a6be9caa9dbf2a69f097bd9a82dfa770 2>&1 | tee results.txt
+          status=${PIPESTATUS[0]}
+
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### Diffing script"
+            echo "- Exit code: $status"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          exit 0
+
+      - name: Upload diffing log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diffing-script-log
+          path: results.txt
+
+      - name: Show log tail
+        if: always()
+        shell: bash
+        run: |
+          echo "Diffing script exit code: ${{ steps.diff.outputs.exit_code }}"
+          tail -n 200 results.txt || true
+
       - name: Fail if regressing
-        run: "grep 'New failures:' results.txt && exit $(cat results.txt | grep 'New failures:' | sed -n 's/New failures: //p')"
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          script_exit="${{ steps.diff.outputs.exit_code }}"
+          new_failures="$(sed -n 's/^New failures: //p' results.txt | tail -n 1)"
+
+          if [[ "$script_exit" != "0" ]]; then
+            echo "::error::Diffing script exited with code $script_exit"
+            exit 1
+          fi
+
+          if [[ -z "$new_failures" ]]; then
+            echo "::error::Could not find 'New failures:' in results.txt"
+            exit 1
+          fi
+
+          if (( new_failures > 0 )); then
+            echo "::error::$new_failures new failures detected"
+            exit 1
+          fi
+
+          echo "No new failures detected"
