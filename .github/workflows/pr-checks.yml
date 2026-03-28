@@ -43,8 +43,6 @@ jobs:
       - name: Trust datho7561's Scripts
         run: jbang trust add https://gist.github.com/datho7561/
       - name: Run diffing script
-        id: diff
-        shell: bash
         run: |
           set -o pipefail
           xvfb-run -a jbang https://gist.github.com/datho7561/a6be9caa9dbf2a69f097bd9a82dfa770 -v 2>&1 | tee results.txt
