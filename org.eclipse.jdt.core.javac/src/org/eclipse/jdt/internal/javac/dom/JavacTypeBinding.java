@@ -1022,7 +1022,17 @@ public abstract class JavacTypeBinding implements ITypeBinding {
 			}
 		}
 
-		Stream<MethodSymbol> declaredMethods = getDeclaredMethodSymbols();
+		Stream<MethodSymbol> declaredMethods;
+		if (isFromSource()) {
+			ArrayList<MethodSymbol> sourceDeclaredMethods = new ArrayList<>();
+			this.typeSymbol.members().getSymbols(MethodSymbol.class::isInstance, LookupKind.NON_RECURSIVE)
+					.forEach(sym -> sourceDeclaredMethods.add((MethodSymbol) sym));
+			Collections.reverse(sourceDeclaredMethods);
+			declaredMethods = sourceDeclaredMethods.stream();
+		} else {
+			declaredMethods = StreamSupport.stream(this.typeSymbol.members().getSymbols(MethodSymbol.class::isInstance, LookupKind.NON_RECURSIVE).spliterator(), false)
+					.map(MethodSymbol.class::cast);
+		}
 		Stream<JavacMethodBinding> methods = declaredMethods
 				.map(sym -> {
 					Type.MethodType methodType = this.types.memberType(this.type, sym).asMethodType();
