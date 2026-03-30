@@ -47,7 +47,7 @@ jobs:
         run: |
           set +e
           set -o pipefail
-          xvfb-run -a jbang https://gist.github.com/datho7561/a6be9caa9dbf2a69f097bd9a82dfa770 -v 2>&1 | tee results.txt
+          xvfb-run -a jbang https://gist.github.com/datho7561/a6be9caa9dbf2a69f097bd9a82dfa770 -verbose 2>&1 | tee results.txt
           status=${PIPESTATUS[0]}
           echo "exit_code=$status" >> "$GITHUB_OUTPUT"
           exit 0
