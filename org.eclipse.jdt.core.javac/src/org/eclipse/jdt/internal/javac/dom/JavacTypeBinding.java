@@ -1022,8 +1022,7 @@ public abstract class JavacTypeBinding implements ITypeBinding {
 			}
 		}
 
-		Stream<MethodSymbol> declaredMethods = getDeclaredMethodSymbols();
-		Stream<JavacMethodBinding> methods = declaredMethods
+		Stream<JavacMethodBinding> methods = getDeclaredMethodSymbols()
 				.map(sym -> {
 					Type.MethodType methodType = this.types.memberType(this.type, sym).asMethodType();
 					return this.resolver.bindings.getMethodBinding(methodType, sym, this.type, isGeneric, null);
@@ -1032,23 +1031,15 @@ public abstract class JavacTypeBinding implements ITypeBinding {
 	}
 
 	private Stream<MethodSymbol> getDeclaredMethodSymbols() {
-		if (shouldReverseSourceInterfaceMethods()) {
-			ArrayList<MethodSymbol> sourceDeclaredMethods = new ArrayList<>();
-			this.typeSymbol.members().getSymbols(MethodSymbol.class::isInstance, LookupKind.NON_RECURSIVE)
-					.forEach(sym -> sourceDeclaredMethods.add((MethodSymbol) sym));
-			Collections.reverse(sourceDeclaredMethods);
-			return sourceDeclaredMethods.stream();
+		if (isFromSource()) {
+			ArrayList<MethodSymbol> methodSymbols = new ArrayList<>();
+				this.typeSymbol.members().getSymbols(MethodSymbol.class::isInstance, LookupKind.NON_RECURSIVE)
+						.forEach(sym -> methodSymbols.add((MethodSymbol) sym));
+			Collections.reverse(methodSymbols);
+			return methodSymbols.stream();
 		}
 		return StreamSupport.stream(this.typeSymbol.members().getSymbols(MethodSymbol.class::isInstance, LookupKind.NON_RECURSIVE).spliterator(), false)
 				.map(MethodSymbol.class::cast);
-	}
-
-	private boolean shouldReverseSourceInterfaceMethods() {
-		return this.typeSymbol instanceof ClassSymbol classSymbol
-				&& classSymbol.isInterface()
-				&& classSymbol.classfile == null
-				&& classSymbol.sourcefile != null
-				&& classSymbol.sourcefile.getKind() == JavaFileObject.Kind.SOURCE;
 	}
 
 	private ITypeBinding[] getDeclaredTypeDefaultImpl(ArrayList<Symbol> l) {
