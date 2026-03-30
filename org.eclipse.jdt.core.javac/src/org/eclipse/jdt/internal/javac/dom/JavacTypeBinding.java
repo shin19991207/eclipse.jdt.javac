@@ -1031,7 +1031,7 @@ public abstract class JavacTypeBinding implements ITypeBinding {
 	}
 
 	private Stream<MethodSymbol> getDeclaredMethodSymbols() {
-		if (shouldReverseSourceInterfaceMethods()) {
+		if (isFromSource()) {
 			ArrayList<MethodSymbol> methodSymbols = new ArrayList<>();
 			this.typeSymbol.members().getSymbols(MethodSymbol.class::isInstance, LookupKind.NON_RECURSIVE)
 					.forEach(sym -> methodSymbols.add((MethodSymbol) sym));
