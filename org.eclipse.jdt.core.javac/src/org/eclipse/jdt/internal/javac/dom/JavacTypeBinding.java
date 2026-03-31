@@ -17,10 +17,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Objects;
-import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -123,10 +121,6 @@ import com.sun.tools.javac.util.Names;
 public abstract class JavacTypeBinding implements ITypeBinding {
 
 	private static final ITypeBinding[] NO_TYPE_ARGUMENTS = new ITypeBinding[0];
-	private static final ThreadLocal<Set<Object>> COMPUTING_JAVA_ELEMENTS =
-			ThreadLocal.withInitial(() -> Collections.newSetFromMap(new IdentityHashMap<>()));
-	private static final ThreadLocal<Set<Object>> COMPUTING_SOURCE_ORIGIN =
-			ThreadLocal.withInitial(() -> Collections.newSetFromMap(new IdentityHashMap<>()));
 
 	private Type initialType;
 	private TypeSymbol initialTypeSymbol;
@@ -266,19 +260,7 @@ public abstract class JavacTypeBinding implements ITypeBinding {
 			return null;
 		}
 		if (this.javaElement == null) {
-			Object token = this.typeSymbol != null ? this.typeSymbol : this;
-			Set<Object> computing = COMPUTING_JAVA_ELEMENTS.get();
-			if (!computing.add(token)) {
-				return null;
-			}
-			try {
-				this.javaElement = computeJavaElement();
-			} finally {
-				computing.remove(token);
-				if (computing.isEmpty()) {
-					COMPUTING_JAVA_ELEMENTS.remove();
-				}
-			}
+			this.javaElement = computeJavaElement();
 		}
 		return this.javaElement;
 	}
@@ -1049,7 +1031,10 @@ public abstract class JavacTypeBinding implements ITypeBinding {
 	}
 
 	private Stream<MethodSymbol> getDeclaredMethodSymbols() {
-		if (isFromSource()) {
+		if (this.typeSymbol instanceof ClassSymbol classSymbol
+				&& classSymbol.isInterface()
+				&& classSymbol.sourcefile != null
+				&& classSymbol.sourcefile.getKind() == JavaFileObject.Kind.SOURCE) {
 			ArrayList<MethodSymbol> methodSymbols = new ArrayList<>();
 			this.typeSymbol.members().getSymbols(MethodSymbol.class::isInstance, LookupKind.NON_RECURSIVE)
 					.forEach(sym -> methodSymbols.add((MethodSymbol) sym));
@@ -1686,22 +1671,10 @@ public abstract class JavacTypeBinding implements ITypeBinding {
 
 	@Override
 	public boolean isFromSource() {
-		Object token = this.typeSymbol != null ? this.typeSymbol : this;
-		Set<Object> computing = COMPUTING_SOURCE_ORIGIN.get();
-		if (!computing.add(token)) {
-			return this.resolver.findDeclaringNode(this) != null || this.isCapture();
-		}
-		try {
-			return this.resolver.findDeclaringNode(this) != null ||
-					getJavaElement() instanceof SourceType ||
-					(getDeclaringClass() != null && getDeclaringClass().isFromSource()) ||
-					this.isCapture();
-		} finally {
-			computing.remove(token);
-			if (computing.isEmpty()) {
-				COMPUTING_SOURCE_ORIGIN.remove();
-			}
-		}
+		return this.resolver.findDeclaringNode(this) != null ||
+				getJavaElement() instanceof SourceType ||
+				(getDeclaringClass() != null && getDeclaringClass().isFromSource()) ||
+				this.isCapture();
 	}
 
 	@Override
