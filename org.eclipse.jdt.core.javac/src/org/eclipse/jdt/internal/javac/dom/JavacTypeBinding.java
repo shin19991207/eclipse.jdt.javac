@@ -125,6 +125,8 @@ public abstract class JavacTypeBinding implements ITypeBinding {
 	private static final ITypeBinding[] NO_TYPE_ARGUMENTS = new ITypeBinding[0];
 	private static final ThreadLocal<Set<Object>> COMPUTING_JAVA_ELEMENTS =
 			ThreadLocal.withInitial(() -> Collections.newSetFromMap(new IdentityHashMap<>()));
+	private static final ThreadLocal<Set<Object>> COMPUTING_SOURCE_ORIGIN =
+			ThreadLocal.withInitial(() -> Collections.newSetFromMap(new IdentityHashMap<>()));
 
 	private Type initialType;
 	private TypeSymbol initialTypeSymbol;
@@ -1684,10 +1686,22 @@ public abstract class JavacTypeBinding implements ITypeBinding {
 
 	@Override
 	public boolean isFromSource() {
-		return this.resolver.findDeclaringNode(this) != null ||
-				getJavaElement() instanceof SourceType ||
-				(getDeclaringClass() != null && getDeclaringClass().isFromSource()) ||
-				this.isCapture();
+		Object token = this.typeSymbol != null ? this.typeSymbol : this;
+		Set<Object> computing = COMPUTING_SOURCE_ORIGIN.get();
+		if (!computing.add(token)) {
+			return this.resolver.findDeclaringNode(this) != null || this.isCapture();
+		}
+		try {
+			return this.resolver.findDeclaringNode(this) != null ||
+					getJavaElement() instanceof SourceType ||
+					(getDeclaringClass() != null && getDeclaringClass().isFromSource()) ||
+					this.isCapture();
+		} finally {
+			computing.remove(token);
+			if (computing.isEmpty()) {
+				COMPUTING_SOURCE_ORIGIN.remove();
+			}
+		}
 	}
 
 	@Override
