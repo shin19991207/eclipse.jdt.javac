@@ -121,6 +121,8 @@ import com.sun.tools.javac.util.Names;
 public abstract class JavacTypeBinding implements ITypeBinding {
 
 	private static final ITypeBinding[] NO_TYPE_ARGUMENTS = new ITypeBinding[0];
+	private static final ThreadLocal<Set<Object>> COMPUTING_JAVA_ELEMENTS =
+			ThreadLocal.withInitial(() -> Collections.newSetFromMap(new IdentityHashMap<>()));
 
 	private Type initialType;
 	private TypeSymbol initialTypeSymbol;
@@ -135,7 +137,6 @@ public abstract class JavacTypeBinding implements ITypeBinding {
 	private boolean recovered = false;
 	private final Type[] alternatives;
 	private IJavaElement javaElement;
-	private boolean computingJavaElement;
 	private String key;
 
 	public JavacTypeBinding(Type type, final TypeSymbol typeSymbol, Type[] alternatives, Symbol backupOwner, boolean likelyGeneric, JavacBindingResolver resolver) {
@@ -261,14 +262,18 @@ public abstract class JavacTypeBinding implements ITypeBinding {
 			return null;
 		}
 		if (this.javaElement == null) {
-			if (this.computingJavaElement) {
+			Object token = this.typeSymbol != null ? this.typeSymbol : this;
+			Set<Object> computing = COMPUTING_JAVA_ELEMENTS.get();
+			if (!computing.add(token)) {
 				return null;
 			}
-			this.computingJavaElement = true;
 			try {
 				this.javaElement = computeJavaElement();
 			} finally {
-				this.computingJavaElement = false;
+				computing.remove(token);
+				if (computing.isEmpty()) {
+					COMPUTING_JAVA_ELEMENTS.remove();
+				}
 			}
 		}
 		return this.javaElement;
