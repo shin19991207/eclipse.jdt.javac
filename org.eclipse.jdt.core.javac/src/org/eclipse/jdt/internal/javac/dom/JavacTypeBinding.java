@@ -1676,7 +1676,6 @@ public abstract class JavacTypeBinding implements ITypeBinding {
 		Symbol symbol = this.typeSymbol;
 		while (symbol != null) {
 			if (symbol instanceof ClassSymbol classSymbol
-					&& classSymbol.classfile == null
 					&& classSymbol.sourcefile != null
 					&& classSymbol.sourcefile.getKind() == JavaFileObject.Kind.SOURCE) {
 				return true;
