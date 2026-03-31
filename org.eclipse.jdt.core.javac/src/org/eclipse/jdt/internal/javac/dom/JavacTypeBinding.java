@@ -1042,14 +1042,6 @@ public abstract class JavacTypeBinding implements ITypeBinding {
 				.map(MethodSymbol.class::cast);
 	}
 
-	private boolean shouldReverseSourceInterfaceMethods() {
-		return this.typeSymbol instanceof ClassSymbol classSymbol
-				&& classSymbol.isInterface()
-				&& classSymbol.classfile == null
-				&& classSymbol.sourcefile != null
-				&& classSymbol.sourcefile.getKind() == JavaFileObject.Kind.SOURCE;
-	}
-
 	private ITypeBinding[] getDeclaredTypeDefaultImpl(ArrayList<Symbol> l) {
 		return StreamSupport.stream(l.spliterator(), false)
 				.filter(ClassSymbol.class::isInstance)
@@ -1676,10 +1668,22 @@ public abstract class JavacTypeBinding implements ITypeBinding {
 
 	@Override
 	public boolean isFromSource() {
-		return this.resolver.findDeclaringNode(this) != null ||
-				getJavaElement() instanceof SourceType ||
-				(getDeclaringClass() != null && getDeclaringClass().isFromSource()) ||
-				this.isCapture();
+		if (this.resolver.findDeclaringNode(this) != null ||
+		    (getDeclaringClass() != null && getDeclaringClass().isFromSource()) ||
+			this.isCapture()) {
+			return true;
+		}
+		Symbol symbol = this.typeSymbol;
+		while (symbol != null) {
+			if (symbol instanceof ClassSymbol classSymbol
+					&& classSymbol.classfile == null
+					&& classSymbol.sourcefile != null
+					&& classSymbol.sourcefile.getKind() == JavaFileObject.Kind.SOURCE) {
+				return true;
+			}
+			symbol = symbol.owner;
+		}
+		return false;
 	}
 
 	@Override
