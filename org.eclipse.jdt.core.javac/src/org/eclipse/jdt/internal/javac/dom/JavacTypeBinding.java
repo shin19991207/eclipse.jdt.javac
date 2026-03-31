@@ -135,6 +135,7 @@ public abstract class JavacTypeBinding implements ITypeBinding {
 	private boolean recovered = false;
 	private final Type[] alternatives;
 	private IJavaElement javaElement;
+	private boolean computingJavaElement;
 	private String key;
 
 	public JavacTypeBinding(Type type, final TypeSymbol typeSymbol, Type[] alternatives, Symbol backupOwner, boolean likelyGeneric, JavacBindingResolver resolver) {
@@ -260,7 +261,15 @@ public abstract class JavacTypeBinding implements ITypeBinding {
 			return null;
 		}
 		if (this.javaElement == null) {
-			this.javaElement = computeJavaElement();
+			if (this.computingJavaElement) {
+				return null;
+			}
+			this.computingJavaElement = true;
+			try {
+				this.javaElement = computeJavaElement();
+			} finally {
+				this.computingJavaElement = false;
+			}
 		}
 		return this.javaElement;
 	}
@@ -1668,21 +1677,10 @@ public abstract class JavacTypeBinding implements ITypeBinding {
 
 	@Override
 	public boolean isFromSource() {
-		if (this.resolver.findDeclaringNode(this) != null ||
-		    (getDeclaringClass() != null && getDeclaringClass().isFromSource()) ||
-			this.isCapture()) {
-			return true;
-		}
-		Symbol symbol = this.typeSymbol;
-		while (symbol != null) {
-			if (symbol instanceof ClassSymbol classSymbol
-					&& classSymbol.sourcefile != null
-					&& classSymbol.sourcefile.getKind() == JavaFileObject.Kind.SOURCE) {
-				return true;
-			}
-			symbol = symbol.owner;
-		}
-		return false;
+		return this.resolver.findDeclaringNode(this) != null ||
+				getJavaElement() instanceof SourceType ||
+				(getDeclaringClass() != null && getDeclaringClass().isFromSource()) ||
+				this.isCapture();
 	}
 
 	@Override
