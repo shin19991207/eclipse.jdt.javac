@@ -43,7 +43,7 @@ jobs:
       - name: Trust datho7561's Scripts
         run: jbang trust add https://gist.github.com/datho7561/
       - name: Run diffing script
-        run: xvfb-run jbang https://gist.github.com/datho7561/a6be9caa9dbf2a69f097bd9a82dfa770 > results.txt
+        run: xvfb-run jbang https://gist.github.com/datho7561/a6be9caa9dbf2a69f097bd9a82dfa770 -v > results.txt
         continue-on-error: true
       - name: Cat the results
         run: cat results.txt
