@@ -26,7 +26,6 @@ import org.eclipse.jdt.internal.compiler.env.AccessRestriction;
 import org.eclipse.jdt.internal.compiler.env.INameEnvironment;
 import org.eclipse.jdt.internal.compiler.env.NameEnvironmentAnswer;
 import org.eclipse.jdt.internal.compiler.impl.CompilerOptions;
-import org.eclipse.jdt.internal.javac.JavacUtils;
 
 import com.sun.source.doctree.DocTree;
 import com.sun.source.doctree.LinkTree;
@@ -41,7 +40,6 @@ import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.ModifiersTree;
 import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.Tree;
-import com.sun.source.util.TreeScanner;
 import com.sun.tools.javac.code.Symbol;
 import com.sun.tools.javac.code.Type;
 import com.sun.tools.javac.parser.Tokens.Comment;
@@ -59,7 +57,7 @@ import com.sun.tools.javac.tree.JCTree.JCNewClass;
 /**
  * Collects access restriction-related problems by scanning a parsed javac AST.
  */
-public class AccessRestrictionTreeScanner extends TreeScanner<Void, Void> {
+public class AccessRestrictionTreeScanner extends TopLevelTreeScanner<Void, Void> {
 
 	// copied from ProblemReporter
 	private final static byte TYPE_ACCESS = 0x0, FIELD_ACCESS = 0x4, CONSTRUCTOR_ACCESS = 0x8, METHOD_ACCESS = 0xC;
