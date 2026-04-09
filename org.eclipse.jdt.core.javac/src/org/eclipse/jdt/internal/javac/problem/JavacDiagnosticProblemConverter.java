@@ -1000,6 +1000,11 @@ public class JavacDiagnosticProblemConverter {
 		        		IProblem.SwitchExpressionsYieldNoResultExpression,
 		        		IProblem.SwitchExpressionsYieldMissingDefaultCase
 		        		};
+		    case "compiler.err.not.stmt" ->
+		    	new int[] {
+		    			IProblem.ExpressionShouldBeAVariable,
+		    			IProblem.ParsingErrorInsertToComplete
+		    			};
 		    default -> new int[] { toProblemId(diagnostic) };
 		};
 		return result;
@@ -1117,7 +1122,6 @@ public class JavacDiagnosticProblemConverter {
 			case "compiler.err.multicatch.types.must.be.disjoint" -> IProblem.InvalidUnionTypeReferenceSequence;
 			case "compiler.err.unreported.exception.implicit.close" -> IProblem.UnhandledExceptionOnAutoClose;
 			case "compiler.err.repeated.modifier" -> IProblem.DuplicateModifierForArgument; // TODO different according to target node
-			case "compiler.err.not.stmt" -> IProblem.InvalidExpressionAsStatement;
 			case "compiler.err.varargs.and.old.array.syntax" -> IProblem.VarargsConflict;
 			case "compiler.err.non-static.cant.be.ref" -> switch (getDiagnosticArgumentByType(diagnostic, KindName.class)) {
 				case METHOD -> IProblem.StaticMethodRequested;
