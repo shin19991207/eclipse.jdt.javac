@@ -26,6 +26,7 @@ import org.eclipse.jdt.internal.javac.javadoc.JavacJdtMarkupParser;
 import org.eclipse.jdt.internal.javac.javadoc.JavacJdtMarkupTag;
 import org.eclipse.jdt.internal.javac.javadoc.JavacJdtMarkupTagAttribute;
 
+import com.sun.source.doctree.DocTree;
 import com.sun.source.doctree.DocTree.Kind;
 import com.sun.source.util.DocTreePath;
 import com.sun.source.util.TreePath;
@@ -111,10 +112,11 @@ class JavadocConverter {
 		if (javac != null) {
 			int startPosition = this.docComment.getSourcePosition(javac.getStartPosition());
 			int endPosition = this.docComment.getSourcePosition(javac.getEndPosition());
-			int length = endPosition - startPosition;
-//			if (res instanceof TextElement) {
-//				length++;
-//			}
+			// Trim trailing whitespace (this removes the newline case)
+			while (endPosition > startPosition && Character.isWhitespace(this.javacConverter.rawText.charAt(endPosition))) {
+				endPosition--;
+			}
+			int length = endPosition - startPosition + 1;
 			if (startPosition >= 0 && length >= 0) {
 				res.setSourceRange(startPosition, length);
 			}
@@ -318,12 +320,18 @@ class JavadocConverter {
 			});
 			res.fragments().addAll(convertElement(literal.body).toList());
 		} else if (javac instanceof DCLink link) {
-			res.setTagName(this.docComment.comment.getStyle() == CommentStyle.JAVADOC_LINE ? TagElement.TAG_LINK :
-				switch (link.getKind()) {
-					case LINK -> TagElement.TAG_LINK;
-					case LINK_PLAIN -> TagElement.TAG_LINKPLAIN;
-					default -> TagElement.TAG_LINK;
-				});
+			boolean cs1 = this.docComment.comment.getStyle() == CommentStyle.JAVADOC_LINE;
+			boolean cs2 = link.getKind() == DocTree.Kind.LINK_PLAIN;
+			if( cs1 && cs2 ) {
+				res.setTagName(TagElement.TAG_LINKPLAIN);
+			} else {
+				res.setTagName(this.docComment.comment.getStyle() == CommentStyle.JAVADOC_LINE ? TagElement.TAG_LINK :
+						switch (link.getKind()) {
+							case LINK -> TagElement.TAG_LINK;
+							case LINK_PLAIN -> TagElement.TAG_LINKPLAIN;
+							default -> TagElement.TAG_LINK;
+						});
+			}
 			if (link.label != null && !link.label.isEmpty() && link.ref != null && link.label.getFirst().getStartPosition() < link.ref.getStartPosition()) {
 				// markdown style
 				link.label.stream().flatMap(this::convertElement).forEach(res.fragments()::add);
