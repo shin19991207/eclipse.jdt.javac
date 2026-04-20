@@ -187,7 +187,7 @@
 		<repository>
 			<id>sdk-i-builds</id>
 			<layout>p2</layout>
-			<url>https://download.eclipse.org/eclipse/updates/I-builds/</url>
+			<url>https://download.eclipse.org/eclipse/updates/4.40-I-builds/</url>
 		</repository>
 	</repositories>
 
