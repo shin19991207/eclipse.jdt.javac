@@ -34,8 +34,6 @@
 	<modules>
 		<module>org.eclipse.jdt.core.javac</module>
 		<module>org.eclipse.jdt.core.javac.configurator</module>
-		<module>org.eclipse.jdt.core.tests.javac</module>
-		<module>org.eclipse.jdt.core.tests.javac.ui</module>
 		<module>org.eclipse.jdt.javac.ui</module>
 		<module>org.eclipse.jdt.javac.feature</module>
 		<module>repository</module>
@@ -162,6 +160,18 @@
 	</build>
 
 	<profiles>
+		<profile>
+			<id>with-core-tests</id>
+			<modules>
+				<module>org.eclipse.jdt.core.tests.javac</module>
+			</modules>
+		</profile>
+		<profile>
+			<id>with-ui-tests</id>
+			<modules>
+				<module>org.eclipse.jdt.core.tests.javac.ui</module>
+			</modules>
+		</profile>
 		<profile>
 			<!-- This profile prevents local maven builds from failing if uncommitted changes are present -->
 			<id>local-dev</id>
