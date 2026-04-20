@@ -45,7 +45,7 @@ jobs:
       - name: Run diffing script
         run: |
           set +e
-          xvfb-run jbang https://gist.github.com/datho7561/a6be9caa9dbf2a69f097bd9a82dfa770 > results.txt 2>&1
+          xvfb-run -a jbang https://gist.github.com/datho7561/a6be9caa9dbf2a69f097bd9a82dfa770 > results.txt 2>&1
           status=$?
           {
             echo
@@ -57,8 +57,12 @@ jobs:
         run: cat results.txt
       - name: Fail if regressing
         run: |
+          echo "===== diffing script output ====="
+          cat results.txt
+          echo "===== end diffing script output ====="
           if ! grep -q 'New failures:' results.txt; then
             echo "Diffing script did not produce a regression summary."
+            grep 'Script exit code:' results.txt || true
             exit 1
           fi
           grep 'New failures:' results.txt
