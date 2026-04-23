@@ -22,7 +22,7 @@ pipeline {
 						userRemoteConfigs: [[url: 'https://github.com/eclipse-jdtls/eclipse-jdt-core-incubator.git']])
 					sh """#!/bin/bash -x
 						mkdir -p $WORKSPACE/tmp
-						
+
 						unset JAVA_TOOL_OPTIONS
 						unset _JAVA_OPTIONS
 						# force qualifier to start with `z` so we identify it more easily and it always seem more recent than upstrea
@@ -33,6 +33,28 @@ pipeline {
 							-Djava.io.tmpdir=$WORKSPACE/tmp -Dproject.build.sourceEncoding=UTF-8 \
 							-DskipTests \
 							-pl org.eclipse.jdt.core.tests.compiler,org.eclipse.jdt.core.tests.model
+						"""
+				}
+			}
+		}
+		stage('Build and install jdt.ui tests') {
+			steps {
+				dir('jdtUiTests') {
+					checkout scmGit(
+						branches: [[name: 'master']],
+						extensions: [ cloneOption(shallow: true) ],
+						userRemoteConfigs: [[url: 'https://github.com/eclipse-jdt/eclipse.jdt.ui.git']])
+					sh """#!/bin/bash -x
+						mkdir -p $WORKSPACE/tmp
+
+						unset JAVA_TOOL_OPTIONS
+						unset _JAVA_OPTIONS
+						# Build jdt.ui test bundles and dependencies
+						mvn install -Djava.io.tmpdir=$WORKSPACE/tmp -Dmaven.repo.local=$WORKSPACE/.m2/repository \
+							-Dtycho.buildqualifier.format="'z'yyyyMMdd-HHmm" \
+							-Djava.io.tmpdir=$WORKSPACE/tmp -Dproject.build.sourceEncoding=UTF-8 \
+							-DskipTests \
+							-pl org.eclipse.jdt.ui.tests -am
 						"""
 				}
 			}
