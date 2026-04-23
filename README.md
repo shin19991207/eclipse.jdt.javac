@@ -46,6 +46,36 @@ if using the configurator bundle at the right level, set only the `--add-opens .
 https://github.com/eclipse-jdtls/eclipse.jdt.javac/blob/main/org.eclipse.jdt.core.javac.configurator/src/org/eclipse/jdt/core/javac/configurator/JavacConfigurationActivator.java#L36
 
 
+### 🔨 Building from Source
+
+#### Local Development Builds
+
+This project depends on test bundles from forked Eclipse repositories that are not published to public P2 repositories:
+- `org.eclipse.jdt.core.tests.compiler` and `org.eclipse.jdt.core.tests.model` from [eclipse-jdtls/eclipse-jdt-core-incubator](https://github.com/eclipse-jdtls/eclipse-jdt-core-incubator)
+- `org.eclipse.jdt.ui.tests` from [eclipse-jdt/eclipse.jdt.ui](https://github.com/eclipse-jdt/eclipse.jdt.ui)
+
+**To build locally**, you must first build these dependencies and install them to your local Maven repository:
+
+```bash
+# 1. Build JDT Core test bundles
+git clone https://github.com/eclipse-jdtls/eclipse-jdt-core-incubator.git
+cd eclipse-jdt-core-incubator
+git checkout dom-with-javac
+mvn install -DskipTests \
+    -pl org.eclipse.jdt.core.tests.compiler,org.eclipse.jdt.core.tests.model,org.eclipse.jdt.compiler.apt.tests,org.eclipse.jdt.core.tests.builder,org.eclipse.jdt.core.tests.builder.mockcompiler -am
+
+# 2. Build JDT UI test bundles
+git clone https://github.com/eclipse-jdt/eclipse.jdt.ui.git
+cd eclipse.jdt.ui
+mvn install -DskipTests -pl org.eclipse.jdt.ui.tests -am
+
+# 3. Now build jdt.javac
+cd /path/to/eclipse.jdt.javac
+mvn clean install
+```
+
+**CI builds** automatically build these dependencies in the Jenkinsfile, so no manual steps are needed in CI.
+
 ### ⌨️ Contribute
 
 From a PDE-able IDE using a target platform that is suitable for JDT development (usually default case).
