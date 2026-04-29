@@ -2132,7 +2132,21 @@ class JavacConverter {
 			Dimension varargsDimension = (Dimension) arrayType.dimensions().removeLast();
 			declaration.varargsAnnotations().addAll(ASTNode.copySubtrees(this.ast, varargsDimension.annotations()));
 			if (arrayType.dimensions().isEmpty()) {
-				return (Type) ASTNode.copySubtree(this.ast, arrayType.getElementType());
+				Type elementType = arrayType.getElementType();
+				elementType.setParent(null, null);
+				return elementType;
+			}
+			int end = this.rawText.indexOf("...", arrayType.getStartPosition());
+			for (Object annotation : varargsDimension.annotations()) {
+				if (annotation instanceof ASTNode node && node.getStartPosition() >= 0) {
+					end = Math.min(end, node.getStartPosition());
+				}
+			}
+			while (end > arrayType.getStartPosition() && Character.isWhitespace(this.rawText.charAt(end - 1))) {
+				end--;
+			}
+			if (end >= arrayType.getStartPosition()) {
+				arrayType.setSourceRange(arrayType.getStartPosition(), end - arrayType.getStartPosition());
 			}
 			return arrayType;
 		}
