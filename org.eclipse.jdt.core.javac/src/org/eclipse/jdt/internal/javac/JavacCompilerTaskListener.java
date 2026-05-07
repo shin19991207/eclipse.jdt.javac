@@ -15,7 +15,6 @@ package org.eclipse.jdt.internal.javac;
 
 import java.io.File;
 import java.io.IOException;
-import java.lang.classfile.ClassFile;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -34,6 +33,7 @@ import org.eclipse.core.resources.IContainer;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.IPath;
+import org.eclipse.jdt.internal.compiler.ClassFile;
 import org.eclipse.jdt.internal.compiler.IProblemFactory;
 import org.eclipse.jdt.internal.compiler.env.ICompilationUnit;
 import org.eclipse.jdt.internal.compiler.impl.CompilerOptions;
